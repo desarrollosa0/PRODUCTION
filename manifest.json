@@ -2,7 +2,7 @@
   "name": "Seguimiento de producción",
   "short_name": "Producción",
   "description": "Seguimiento de producción, embarque, montaje, insumos y finanzas de estructura metálica.",
-  "star_url": "./",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
