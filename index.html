@@ -263,6 +263,7 @@ window.APP_CONFIG=window.APP_CONFIG||{
 <button style="padding:10px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-size:15px;cursor:pointer">Entrar</button>
 <div id="lgm" style="color:#dc2626;font-size:14px;min-height:18px"></div>
 <div id="lgi" style="color:#6b7686;font-size:11px;word-break:break-all"></div>
+<button type="button" id="lgr" style="display:none;padding:8px;border:1px solid #888;border-radius:6px;background:transparent;color:inherit;cursor:pointer;font-size:13px">Borrar sesión guardada y reintentar</button>
 </form></div>
 <script>
 (function(){
@@ -280,7 +281,7 @@ G("lgi").textContent=okCfg?"Servidor: "+SU+" · clave: "+KK:"";
 if(KK==="secret"){msg("¡Pegaste una clave SECRETA (service_role / sb_secret)! No la uses aquí: en Supabase → Project Settings → API copia la clave anon o publishable. Además cambia (rota) la clave secreta, porque quedó expuesta.");G("lgf").querySelector("button").disabled=true;window.claude={use:function(){return new Promise(function(){})}};return}
 if(!okCfg||!window.supabase){msg(!okCfg?"Falta configurar o es inválida la SUPABASE_URL o la SUPABASE_ANON_KEY en config.js. La URL debe verse como https://abcdefgh.supabase.co (termina en .supabase.co). Valor leído para la URL: «"+RAWU.slice(0,90)+"»":"No se pudo cargar Supabase. Revisa tu conexión a internet.");G("lgf").querySelector("button").disabled=true;
 window.claude={use:function(){return new Promise(function(){})}};return}
-var sb=window.supabase.createClient(SU,SK,{auth:{persistSession:true,autoRefreshToken:true}});
+var sb=window.supabase.createClient(SU,SK,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,lock:function(n,t,fn){return fn()}}});
 function chk(r){if(r&&r.error)throw new Error(r.error.message||String(r.error));return r}
 /* ---------- base de datos (colecciones tipo Firestore sobre la tabla docs) ---------- */
 var LS={},TM={};
@@ -327,8 +328,20 @@ var b=document.createElement("button");b.textContent="Cerrar sesión";b.style.cs
 sb.auth.getSession().then(function(r){if(r.data&&r.data.session)enter()});
 function diag(){var h=SU.replace(/^https:\/\//,""),bad="El servidor «"+h+"» no existe o no responde. Revisa que el proyecto no esté pausado (supabase.com → tu proyecto → Restore) y que la URL de config.js sea exactamente la de Project Settings → API.";
 return Promise.race([fetch(SU+"/auth/v1/health",{headers:{apikey:SK},cache:"no-store"}).then(function(r){return r.ok?"El servidor sí responde (HTTP "+r.status+") pero el inicio de sesión no avanza. Recarga con Ctrl+F5 e intenta de nuevo; si persiste, confirma que la clave sea la anon/publishable de ESTE proyecto.":"El servidor respondió HTTP "+r.status+": revisa la URL y la clave de "+h+"."},function(){return bad}),new Promise(function(res){setTimeout(function(){res(bad)},8000)})])}
-READY=function(){msg("Entrando…");var done=false,TMO=C.LOGIN_TIMEOUT||15000,to=setTimeout(function(){if(!done)diag().then(function(t){if(!done)msg("Sin respuesta tras "+Math.round(TMO/1000)+" s. "+t)})},TMO);
-Promise.resolve(sb.auth.signInWithPassword({email:G("lge").value.trim(),password:G("lgp").value})).then(function(r){done=true;clearTimeout(to);if(r.error){if(r.error.message==="Invalid login credentials"){msg("Correo o contraseña incorrectos.");return}if(/fetch|network|load failed/i.test(r.error.message)){diag().then(function(t){msg("No se pudo conectar. "+t)});return}msg("No se pudo entrar: "+r.error.message);return}enter()},function(err){done=true;clearTimeout(to);diag().then(function(t){msg("No se pudo conectar ("+((err&&err.message)||err)+"). "+t)})})};
+function fail(t){msg(t);G("lgr").style.display=""}
+function hostOf(){return SU.replace(/^https:\/\//,"")}
+function health(){var ctl=window.AbortController?new AbortController():null,tm=setTimeout(function(){if(ctl)ctl.abort()},8000);
+return fetch(SU+"/auth/v1/health",{headers:{apikey:SK},cache:"no-store",signal:ctl?ctl.signal:undefined}).then(function(r){clearTimeout(tm);return r.status},function(){clearTimeout(tm);return 0})}
+G("lgr").onclick=function(){try{Object.keys(localStorage).forEach(function(k){if(/^sb-/.test(k))localStorage.removeItem(k)})}catch(e){}location.reload()};
+function login(){var done=false,TMO=C.LOGIN_TIMEOUT||15000,to=setTimeout(function(){if(!done)diag().then(function(t){if(!done)fail("Sin respuesta tras "+Math.round(TMO/1000)+" s. "+t)})},TMO);
+Promise.resolve(sb.auth.signInWithPassword({email:G("lge").value.trim(),password:G("lgp").value})).then(function(r){done=true;clearTimeout(to);if(r.error){if(r.error.message==="Invalid login credentials"){msg("Correo o contraseña incorrectos.");return}if(/fetch|network|load failed/i.test(r.error.message)){diag().then(function(t){fail("No se pudo conectar. "+t)});return}msg("No se pudo entrar: "+r.error.message);return}enter()},function(err){done=true;clearTimeout(to);diag().then(function(t){fail("No se pudo conectar ("+((err&&err.message)||err)+"). "+t)})})}
+READY=function(){msg("Comprobando conexión con el servidor…");G("lgr").style.display="none";
+health().then(function(st){
+if(!st){fail("No se pudo conectar con «"+hostOf()+"»: el nombre no existe, el proyecto está pausado o tu red lo bloquea. Revisa: 1) abre "+SU+"/auth/v1/health en una pestaña nueva (debe salir un texto corto); 2) compara la dirección con el Project URL de Supabase; 3) en supabase.com mira si el proyecto dice Paused y pulsa Restore.");return}
+if(st==401||st==403){fail("La clave de config.js no es válida para este proyecto (HTTP "+st+"). Copia otra vez la clave publishable de ESE proyecto en Project Settings → API Keys.");return}
+if(st>=500||st==404){fail("El servidor «"+hostOf()+"» respondió con error (HTTP "+st+"). Si el proyecto está pausado, restáuralo en supabase.com y espera unos minutos.");return}
+msg("Entrando…");login()})};
+
 }catch(e){msg("Error al iniciar: "+((e&&e.message)||e));console.error(e)}
 })();
 </script>
