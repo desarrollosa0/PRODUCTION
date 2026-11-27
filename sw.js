@@ -1,5 +1,5 @@
 // Servicio de la app: guarda lo básico para abrir rápido. NUNCA guarda datos de Supabase.
-const V = "produccion-v3";
+const V = "produccion-v4";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 
 self.addEventListener("install", (e) => {
